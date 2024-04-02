@@ -1,6 +1,5 @@
-import tkinter as gui
 import cv2
-from PIL import Image, ImageTk
+import numpy as np
 
 # Function to find intersection point of two lines
 def intersection(line1, line2):
@@ -19,105 +18,120 @@ def intersection(line1, line2):
     y = det(d, ydiff) / div
     return int(x), int(y)
 
-# Function to display GUI
-def display(name):
-    window = gui.Tk()
-    window.title('Logged in')
+# Open the video file
+vid = cv2.VideoCapture("IMG_6818.mov")
 
-    userName = f"Welcome {name}!"
-    welcome = gui.Label(window, text=userName)
-    welcome.grid(row=0, column=0, columnspan=4)
+# Check if the video file is opened correctly
+if not vid.isOpened():
+    raise IOError("Cannot open video file")
 
-    # Frame for controlling buttons
-    control_frame_top_right = gui.Frame(window)
-    control_frame_top_right.grid(row=0, column=1, sticky="nsew")
+# Get the video resolution
+width = int(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
+height = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
+print("Video resolution:", width, "x", height)
 
-    fwd_btn     = gui.Button(control_frame_top_right, text="FORWARD")
-    fwd_btn.grid(row=0, column=1, sticky="nsew")
-    fwd_btn.config(width=10, height=5)
+# Set the initial window size
+window_width = 800  # Adjust as needed
+window_height = int(window_width * height / width)
 
-    left_btn    = gui.Button(control_frame_top_right, text="LEFT")
-    left_btn.grid(row=1, column=0, sticky="nsew")
-    left_btn.config(width=10, height=5)
+# Calculate the x-coordinate for the top vertex (average of the bottom two points)
+top_x = (width // 2 - 800 + width // 2 + 1300) / 2
 
-    right_btn   = gui.Button(control_frame_top_right, text="RIGHT")
-    right_btn.grid(row=1, column=2, sticky="nsew")
-    right_btn.config(width=10, height=5)
+# Define the vertices of the triangle mask
+triangle_vertices = np.array([[top_x - 125, 1000],  # Top vertex
+                               [width // 2 - 1100, height - 100],  # Bottom left vertex
+                               [width // 2 + 1300, height - 100]  # Bottom right vertex
+                               ])
 
-    stop_btn    = gui.Button(control_frame_top_right, text="STOP")
-    stop_btn.grid(row=1, column=1, sticky="nsew")
-    stop_btn.config(width=10, height=5)
+# Load the image to be placed in the top left corner and resize it to match the region size
+download_img = cv2.imread("download.jpg")
+download_img = cv2.resize(download_img, (255, 255))
 
-    bwd_btn     = gui.Button(control_frame_top_right, text="BACKWARD")
-    bwd_btn.grid(row=2, column=1, sticky="nsew")
-    bwd_btn.config(width=10, height=5)
+# Streams the video
+while True:
+    ret, img = vid.read()
 
-    # Frame for video
-    video_frame_bottom_left = gui.Frame(window)
-    video_frame_bottom_left.grid(row=1, column=0, sticky="nsew")
+    if not ret:
+        break
 
-    video_frame_top_left = gui.Frame(window)
-    video_frame_top_left.grid(row=0, column=0, sticky="nsew")
+    # Convert the image to grayscale
+    imgray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # Frame for log text
-    log_frame_bottom_right = gui.Frame(window)
-    log_frame_bottom_right.grid(row=1, column=1, sticky="nsew")
+    # Perform Canny edge detection
+    edges = cv2.Canny(imgray, 50, 150, apertureSize=3)
 
-    log_text = gui.Text(log_frame_bottom_right)
-    log_text.pack(fill="both", expand=True)
+    # Create a triangle mask
+    mask = np.zeros(edges.shape[:2], np.uint8)
+    cv2.fillPoly(mask, [triangle_vertices.astype(int)], (255))
 
-    # Centering buttons within frames
-    control_frame_top_right.grid_columnconfigure(0, weight=1)
-    control_frame_top_right.grid_columnconfigure(2, weight=1)
+    # Make the mask blue
+    mask_blue = cv2.merge([np.zeros_like(mask), np.zeros_like(mask), mask])
 
-    # Adjusting row and column weights for equal division
-    for i in range(2):
-        window.rowconfigure(i, weight=1)
-    for i in range(2):
-        window.columnconfigure(i, weight=1)
+    # Apply the mask
+    res = cv2.bitwise_and(edges, edges, mask=mask)
 
-    # Open the video file
-    vid1 = cv2.VideoCapture("IMG_6818.mov")
-    vid2 = cv2.VideoCapture("IMG_6818.mov")
+    # Detect lines using HoughLinesP
+    lines = cv2.HoughLinesP(
+        res,  # Input edge image
+        1,  # Distance resolution in pixels
+        np.pi / 180,  # Angle resolution in radians
+        threshold=10,  # Min number of votes for valid line
+        minLineLength=50,  # Min allowed length of line
+        maxLineGap=100  # Max allowed gap between line for joining them
+    )
 
-    # Streams the video
-    while True:
-        ret1, frame1 = vid1.read()
-        ret2, frame2 = vid2.read()
+    # Define variables for the outer lines of the lane
+    left_lane_line = None
+    right_lane_line = None
 
-        if not ret1 or not ret2:
-            break
+    if lines is not None:
+        # Iterate through detected lines
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
 
-        # Convert frame to RGB format for tkinter
-        frame1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2RGB)
-        frame1 = cv2.resize(frame1, (640, 480))
+            # Calculate slope and intercept of the line
+            slope = (y2 - y1) / (x2 - x1) if x2 != x1 else float('inf')
+            intercept = y1 - slope * x1
 
-        frame2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2RGB)
-        frame2 = cv2.resize(frame2, (640, 480))
+            # Filter lines based on slope and position
+            if slope < -0.5 and x1 < width // 2:  # Left lane line
+                if left_lane_line is None or x1 < left_lane_line[0][0]:
+                    left_lane_line = ((x1, y1), (x2, y2))
+            elif slope > 0.5 and x1 > width // 2:  # Right lane line
+                if right_lane_line is None or x1 > right_lane_line[0][0]:
+                    right_lane_line = ((x1, y1), (x2, y2))
 
-        # Convert the frame to an ImageTk object
-        img1 = Image.fromarray(frame1)
-        img1 = ImageTk.PhotoImage(image=img1)
+    # Find midline
+    mid_line = ((left_lane_line[0][0] + right_lane_line[0][0]) // 2,
+                (left_lane_line[0][1] + right_lane_line[0][1]) // 2), \
+               ((left_lane_line[1][0] + right_lane_line[1][0]) // 2,
+                (left_lane_line[1][1] + right_lane_line[1][1]) // 2)
 
-        img2 = Image.fromarray(frame2)
-        img2 = ImageTk.PhotoImage(image=img2)
+    # Draw the left lane line
+    if left_lane_line is not None:
+        cv2.line(mask_blue, left_lane_line[0], left_lane_line[1], (255, 0, 0), thickness=6)
 
-        # Update the video frames
-        video_label1 = gui.Label(video_frame_top_left, image=img1)
-        video_label1.image = img1
-        video_label1.pack()
+    # Draw the right lane line
+    if right_lane_line is not None:
+        cv2.line(mask_blue, right_lane_line[0], right_lane_line[1], (255, 0, 0), thickness=6)
 
-        video_label2 = gui.Label(video_frame_bottom_left, image=img2)
-        video_label2.image = img2
-        video_label2.pack()
+    # Draw the mid line
+    if mid_line is not None:
+        cv2.line(mask_blue, mid_line[0], mid_line[1], (0, 255, 0), thickness=6)
 
-        # Update the GUI
-        window.update()
+    # Overlay the blue mask onto the original image
+    img = cv2.addWeighted(img, 0.7, mask_blue, 0.3, 0)
 
-    vid1.release()
-    vid2.release()
-    cv2.destroyAllWindows()
+    # Add "download.jpg" image in the top left corner
+    img[:255, :255] = download_img
 
-    window.mainloop()
+    # Resize the image to fit the window
+    img = cv2.resize(img, (window_width, window_height))
 
-display("Mark")
+    k = cv2.waitKey(10)
+    if k == 27:
+        break
+    cv2.imshow("masked frame", img)
+
+vid.release()
+cv2.destroyAllWindows()
