@@ -1,0 +1,123 @@
+import tkinter as gui
+import cv2
+from PIL import Image, ImageTk
+
+# Function to find intersection point of two lines
+def intersection(line1, line2):
+    xdiff = (line1[0][0] - line1[1][0], line2[0][0] - line2[1][0])
+    ydiff = (line1[0][1] - line1[1][1], line2[0][1] - line2[1][1])
+
+    def det(a, b):
+        return a[0] * b[1] - a[1] * b[0]
+
+    div = det(xdiff, ydiff)
+    if div == 0:
+        return None
+
+    d = (det(*line1), det(*line2))
+    x = det(d, xdiff) / div
+    y = det(d, ydiff) / div
+    return int(x), int(y)
+
+# Function to display GUI
+def display(name):
+    window = gui.Tk()
+    window.title('Logged in')
+
+    userName = f"Welcome {name}!"
+    welcome = gui.Label(window, text=userName)
+    welcome.grid(row=0, column=0, columnspan=4)
+
+    # Frame for controlling buttons
+    control_frame_top_right = gui.Frame(window)
+    control_frame_top_right.grid(row=0, column=1, sticky="nsew")
+
+    fwd_btn     = gui.Button(control_frame_top_right, text="FORWARD")
+    fwd_btn.grid(row=0, column=1, sticky="nsew")
+    fwd_btn.config(width=10, height=5)
+
+    left_btn    = gui.Button(control_frame_top_right, text="LEFT")
+    left_btn.grid(row=1, column=0, sticky="nsew")
+    left_btn.config(width=10, height=5)
+
+    right_btn   = gui.Button(control_frame_top_right, text="RIGHT")
+    right_btn.grid(row=1, column=2, sticky="nsew")
+    right_btn.config(width=10, height=5)
+
+    stop_btn    = gui.Button(control_frame_top_right, text="STOP")
+    stop_btn.grid(row=1, column=1, sticky="nsew")
+    stop_btn.config(width=10, height=5)
+
+    bwd_btn     = gui.Button(control_frame_top_right, text="BACKWARD")
+    bwd_btn.grid(row=2, column=1, sticky="nsew")
+    bwd_btn.config(width=10, height=5)
+
+    # Frame for video
+    video_frame_bottom_left = gui.Frame(window)
+    video_frame_bottom_left.grid(row=1, column=0, sticky="nsew")
+
+    video_frame_top_left = gui.Frame(window)
+    video_frame_top_left.grid(row=0, column=0, sticky="nsew")
+
+    # Frame for log text
+    log_frame_bottom_right = gui.Frame(window)
+    log_frame_bottom_right.grid(row=1, column=1, sticky="nsew")
+
+    log_text = gui.Text(log_frame_bottom_right)
+    log_text.pack(fill="both", expand=True)
+
+    # Centering buttons within frames
+    control_frame_top_right.grid_columnconfigure(0, weight=1)
+    control_frame_top_right.grid_columnconfigure(2, weight=1)
+
+    # Adjusting row and column weights for equal division
+    for i in range(2):
+        window.rowconfigure(i, weight=1)
+    for i in range(2):
+        window.columnconfigure(i, weight=1)
+
+    # Open the video file
+    vid1 = cv2.VideoCapture("IMG_6818.mov")
+    vid2 = cv2.VideoCapture("IMG_6818.mov")
+
+    # Streams the video
+    while True:
+        ret1, frame1 = vid1.read()
+        ret2, frame2 = vid2.read()
+
+        if not ret1 or not ret2:
+            break
+
+        # Convert frame to RGB format for tkinter
+        frame1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2RGB)
+        frame1 = cv2.resize(frame1, (640, 480))
+
+        frame2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2RGB)
+        frame2 = cv2.resize(frame2, (640, 480))
+
+        # Convert the frame to an ImageTk object
+        img1 = Image.fromarray(frame1)
+        img1 = ImageTk.PhotoImage(image=img1)
+
+        img2 = Image.fromarray(frame2)
+        img2 = ImageTk.PhotoImage(image=img2)
+
+        # Update the video frames
+        video_label1 = gui.Label(video_frame_top_left, image=img1)
+        video_label1.image = img1
+        video_label1.pack()
+
+        video_label2 = gui.Label(video_frame_bottom_left, image=img2)
+        video_label2.image = img2
+        video_label2.pack()
+
+        # Update the GUI
+        window.update()
+
+    vid1.release()
+    vid2.release()
+    cv2.destroyAllWindows()
+
+    window.mainloop()
+
+display("Mark")
